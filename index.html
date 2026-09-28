@@ -55,6 +55,9 @@
   .marqueur.depart { background: #1e6fff; }
   .marqueur.etoile { background: #ffd400; color: #1d2733; }
   .marqueur.emoji { background: #fff; font-size: 16px; }
+  .marqueur.grand { width: 40px; height: 40px; font-size: 24px; border: 3px solid #e67e22; }
+  .bandeau { background: #fff3e0; border: 1px solid #f5c48a; border-radius: 12px; padding: 10px 12px; margin: 10px 0; font-size: 0.95em; }
+  .etape.principale h3::after { content: "  🎯 étape principale"; font-size: 0.75em; color: #e67e22; }
   .credits { font-size: 0.75em; color: #6b7a89; padding: 0 16px 20px; }
 </style>
 </head>
@@ -104,7 +107,7 @@
 // ===== BALADES : pour chaque étape [nom, latitude, longitude, description] =====
 const BALADES = [
   { nom: "🎲 Balade surprise", surprise: true, etapes: [] },
-  { nom: "🛝 Sorties enfants", enfants: true, etapes: [] },
+  { nom: "🎠 Sorties enfants", enfants: true, etapes: [] },
   { nom: "Vieille ville de Zurich", etapes: [
     ["Zürich HB", 47.3779, 8.5403, "La gare centrale (1871), l'une des plus fréquentées d'Europe."],
     ["Bahnhofstrasse", 47.3740, 8.5390, "La célèbre rue commerçante qui relie la gare au lac."],
@@ -167,7 +170,7 @@ let surpriseKm = lire("km", 3);
 let surpriseEnfants = lire("enfants", false);
 document.getElementById("boucle").checked = boucle;
 
-let avecDepart = false, vues = new Set(), ordre = [], distancesEtapes = [], positionsSurprise = [], marqueurs = {}, sorties = [];
+let contenuBalade = "", avecDepart = false, vues = new Set(), ordre = [], distancesEtapes = [], positionsSurprise = [], marqueurs = {}, sorties = [];
 const balade = () => BALADES[choix];
 const etapes = () => balade().etapes;
 const speciale = () => balade().surprise || balade().enfants;
@@ -335,9 +338,13 @@ const TYPES = {
     ["tourism", "artwork", "Œuvre d'art", 2, "★", true], ["amenity", "fountain", "Fontaine", 2, "★", true],
     ["leisure", "park", "Parc", 2, "★", true], ["leisure", "garden", "Jardin", 2, "★", true],
     ["amenity", "place_of_worship", "Lieu de culte", 1, "★", true],
+    ["waterway", "waterfall", "Cascade", 3, "★", false], ["natural", "peak", "Sommet", 2, "★", true],
+    ["leisure", "nature_reserve", "Réserve naturelle", 2, "★", true], ["man_made", "pier", "Débarcadère", 2, "★", true],
+    ["leisure", "marina", "Port", 2, "★", true], ["leisure", "beach_resort", "Bains au lac", 2, "★", true],
+    ["natural", "beach", "Plage", 2, "★", false],
   ],
   enfants: [
-    ["leisure", "playground", "Place de jeux", 3, "🛝", false], ["tourism", "zoo", "Animaux", 3, "🦙", false],
+    ["leisure", "playground", "Place de jeux", 3, "🎠", false], ["tourism", "zoo", "Animaux", 3, "🦙", false],
     ["leisure", "water_park", "Parc aquatique", 3, "💦", false], ["leisure", "park", "Parc", 2, "🌳", true],
     ["leisure", "beach_resort", "Plage / Strandbad", 2, "🏖️", false], ["leisure", "swimming_area", "Baignade", 2, "🏖️", false],
     ["natural", "beach", "Plage", 2, "🏖️", false], ["amenity", "ice_cream", "Glacier", 1, "🍦", true],
@@ -347,7 +354,8 @@ const TYPES = {
 const REQUETES = {
   visite: A => `nwr["name"]["tourism"~"^(museum|attraction|artwork)$"]${A};nwr["tourism"="viewpoint"]${A};`
     + `nwr["name"]["historic"~"^(monument|memorial|castle|manor|city_gate|ruins|archaeological_site|building|church|tower|fort)$"]${A};`
-    + `nwr["name"]["amenity"~"^(fountain|place_of_worship)$"]${A};nwr["name"]["leisure"~"^(park|garden)$"]${A};`,
+    + `nwr["name"]["amenity"~"^(fountain|place_of_worship)$"]${A};nwr["name"]["leisure"~"^(park|garden|nature_reserve|marina|beach_resort)$"]${A};`
+    + `nwr["waterway"="waterfall"]${A};nwr["name"]["natural"="peak"]${A};nwr["natural"="beach"]${A};nwr["name"]["man_made"="pier"]${A};`,
   enfants: A => `nwr["leisure"~"^(playground|water_park|beach_resort|swimming_area)$"]${A};nwr["name"]["leisure"="park"]${A};`
     + `nwr["tourism"~"^(zoo|viewpoint|picnic_site)$"]${A};nwr["name"]["amenity"="ice_cream"]${A};nwr["natural"="beach"]${A};`,
 };
@@ -355,13 +363,13 @@ const SERVEURS_OSM = ["https://overpass-api.de/api/interpreter", "https://overpa
                       "https://overpass.kumi.systems/api/interpreter"];
 
 async function chercherLieux(mode, centre, rayon) {
-  const cle = "lieux_" + mode + "_" + centre.map(x => x.toFixed(3)).join(",");
+  const cle = "lieux2_" + mode + "_" + centre.map(x => x.toFixed(3)).join(",");
   const garde = lire(cle, null);
   if (garde && Date.now() - garde.date < 30 * 86400000) return filtrer(garde.lieux, centre, rayon);
 
   const A = `(around:${RAYON_RECHERCHE},${centre[0]},${centre[1]})`;
-  const q = `[out:json][timeout:15];(${REQUETES[mode](A)});out center 700;`;
-  const data = await Promise.any(SERVEURS_OSM.map(s => fetchJson(s + "?data=" + encodeURIComponent(q), 12)))
+  const q = `[out:json][timeout:25];(${REQUETES[mode](A)});out center 700;`;
+  const data = await Promise.any(SERVEURS_OSM.map(s => fetchJson(s + "?data=" + encodeURIComponent(q), 25)))
     .catch(() => { throw new Error("serveurs de lieux indisponibles"); });
   const vus = new Set(), lieux = [];
   for (const el of data.elements || []) {
@@ -375,19 +383,20 @@ async function chercherLieux(mode, centre, rayon) {
     vus.add(id);
     lieux.push({ nom, lat: +lat.toFixed(5), lon: +lon.toFixed(5), type: t[2], interet: t[3], sym: t[4] });
   }
-  ecrire(cle, { date: Date.now(), lieux });
+  // On ne garde en mémoire que les réponses complètes (un serveur surchargé peut renvoyer une liste vide)
+  if (lieux.length && !data.remark) ecrire(cle, { date: Date.now(), lieux });
   return filtrer(lieux, centre, rayon);
 }
 const filtrer = (lieux, centre, rayon) =>
   lieux.map(l => ({ ...l, d: distance(centre, [l.lat, l.lon]) })).filter(l => l.d <= rayon);
-const dejaCherche = mode => depart && lire("lieux_" + mode + "_" + depart.lat.toFixed(3) + "," + depart.lon.toFixed(3), null);
+const dejaCherche = mode => depart && lire("lieux2_" + mode + "_" + depart.lat.toFixed(3) + "," + depart.lon.toFixed(3), null);
 
 // ===================== SORTIES ENFANTS =====================
 async function afficherSortiesEnfants(numero) {
   const resume = document.getElementById("resume"), liste = document.getElementById("etapes");
   liste.innerHTML = "";
-  if (!depart) { resume.textContent = "Choisissez d'abord un point de départ (adresse, ma position…)."; return; }
-  resume.textContent = dejaCherche("enfants") ? "Chargement…" : "Première recherche des sorties enfants (jusqu'à 15 s, ensuite ce sera instantané)…";
+  if (!depart) { resume.textContent = "👉 Choisissez d'abord un point de départ : touchez « 📍 Ma position », « Wädenswil gare » ou tapez une adresse."; return; }
+  resume.textContent = dejaCherche("enfants") ? "Chargement…" : "Première recherche des sorties enfants (jusqu'à 25 s, ensuite ce sera instantané)…";
   try { sorties = await chercherLieux("enfants", [depart.lat, depart.lon], RAYON_RECHERCHE); }
   catch (e) { if (numero === choix) resume.textContent = "Recherche impossible pour le moment, réessayez dans un instant."; return; }
   if (numero !== choix) return;
@@ -439,9 +448,9 @@ const auHasard = liste => {
 async function tracerSurprise(numero) {
   const resume = document.getElementById("resume"), liste = document.getElementById("etapes");
   liste.innerHTML = "";
-  if (!depart) { resume.textContent = "Choisissez d'abord un point de départ (adresse, ma position…)."; return; }
+  if (!depart) { resume.textContent = "👉 Choisissez d'abord un point de départ : touchez « 📍 Ma position », « Wädenswil gare » ou tapez une adresse."; return; }
   const mode = surpriseEnfants ? "enfants" : "visite";
-  resume.textContent = dejaCherche(mode) ? "Préparation de la balade…" : "Première recherche des lieux autour du départ (jusqu'à 15 s, ensuite ce sera instantané)…";
+  resume.textContent = dejaCherche(mode) ? "Préparation de la balade…" : "Première recherche des lieux autour du départ (jusqu'à 25 s, ensuite ce sera instantané)…";
   const d0 = [depart.lat, depart.lon];
   const rayon = Math.round(surpriseKm * 1000 / 4);   // 2 km → 500 m, 3 km → 750 m, 5 km → 1250 m
 
@@ -449,8 +458,14 @@ async function tracerSurprise(numero) {
   try { lieux = await chercherLieux(mode, d0, rayon); } catch (e) { resume.textContent = "Lieux indisponibles, balade au hasard…"; }
   if (numero !== choix) return;
 
+  // Coin peu fourni : on élargit la zone (la boucle sera un peu plus longue)
+  if (lieux.filter(l => l.d > rayon * 0.3).length < 4) {
+    try { lieux = await chercherLieux(mode, d0, Math.round(surpriseKm * 1000 / 2.6)); } catch (e) {}
+  }
+  if (numero !== choix) return;
+  const nbTrouves = lieux.length;
   // 2 ou 3 « aimants » : des lieux intéressants dans des directions voisines
-  const candidats = lieux.filter(l => l.d > rayon * 0.3);
+  const candidats = lieux.filter(l => l.d > 150);
   const cap = Math.random() * 360;
   const aimants = [];
   for (const decal of [-35, 35, 0].slice(0, surpriseKm >= 3 ? 3 : 2)) {
@@ -469,7 +484,8 @@ async function tracerSurprise(numero) {
   let route;
   try { route = await itineraire(pts); } catch (e) { resume.textContent = "Itinéraire impossible : " + e.message; return; }
   if (numero !== choix) return;
-  L.geoJSON(route.geometry, { style: { color: "#0f4c81", weight: 5, opacity: 0.75 } }).addTo(calqueParcours);
+  const couleur = surpriseEnfants ? "#e67e22" : "#0f4c81";
+  L.geoJSON(route.geometry, { style: { color: couleur, weight: 6, opacity: 0.8, dashArray: surpriseEnfants ? "2 10" : null, lineCap: "round" } }).addTo(calqueParcours);
   carte.fitBounds(route.geometry.coordinates.map(c => [c[1], c[0]]), { padding: [30, 30] });
 
   // Tous les lieux à moins de 70 m du tracé, dans l'ordre du parcours
@@ -480,22 +496,29 @@ async function tracerSurprise(numero) {
   for (const l of lieux) {
     let best = Infinity, iBest = 0;
     for (let i = 0; i < trace.length; i++) { const d = distance([l.lat, l.lon], trace[i]); if (d < best) { best = d; iBest = i; } }
-    if (best <= PROCHE_PARCOURS || aimants.includes(l)) trouves.push({ ...l, pos: cumul[iBest] });
+    if (best <= PROCHE_PARCOURS || aimants.includes(l)) trouves.push({ ...l, pos: cumul[iBest], principale: aimants.includes(l) });
   }
   trouves.sort((a, b) => a.pos - b.pos);
-  const choisis = trouves.slice(0, 25);
+  const choisis = trouves.filter(t => t.principale).concat(trouves.filter(t => !t.principale)).slice(0, 25)
+    .sort((a, b) => a.pos - b.pos);
 
-  balade().etapes = choisis.map(t => [t.nom, t.lat, t.lon, t.type, t.sym]);
+  balade().etapes = choisis.map(t => [t.nom, t.lat, t.lon, t.type, t.sym, t.principale]);
   positionsSurprise = choisis.map(t => t.pos);
   ordre = choisis.map((t, i) => i);
   vues = new Set();
   ecrire("vues_" + choix, []);
 
   choisis.forEach((t, i) => {
-    marqueurs[i] = L.marker([t.lat, t.lon], { icon: icone(t.sym, t.sym === "★" ? "etoile" : "emoji") })
-      .bindPopup(`<b>${t.nom}</b><br>${t.type}`).addTo(calqueEtapes);
+    marqueurs[i] = L.marker([t.lat, t.lon], { icon: icone(t.sym, (t.sym === "★" ? "etoile" : "emoji") + (t.principale ? " grand" : "")),
+      zIndexOffset: t.principale ? 1000 : 0 })
+      .bindPopup(`<b>${t.nom}</b><br>${t.type}${t.principale ? "<br>🎯 étape principale" : ""}`).addTo(calqueEtapes);
   });
-  resume.textContent = `Boucle de ${km(route.distance)} · environ ${duree(route.distance)} · ${choisis.length} lieux à découvrir`;
+  // Résumé : ce qu'on va trouver (ex. « 3 places de jeux, 1 glacier »)
+  const compte = {};
+  choisis.forEach(t => compte[t.sym + " " + t.type] = (compte[t.sym + " " + t.type] || 0) + 1);
+  contenuBalade = Object.entries(compte).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} × ${k}`).join(" · ");
+  if (!nbTrouves) contenuBalade = "aucun lieu trouvé — le serveur des lieux n'a pas répondu, réessayez « 🔀 Autre balade » dans un instant";
+  resume.textContent = (surpriseEnfants ? "🧒 Balade enfants · " : "") + `Boucle de ${km(route.distance)} · environ ${duree(route.distance)} · ${choisis.length} lieux à découvrir`;
   afficherListe();
 }
 
@@ -504,12 +527,17 @@ function afficherListe() {
   const decal = avecDepart ? 1 : 0;
   const zone = document.getElementById("etapes");
   if (balade().surprise) {
+    const bandeau = etapes().length ? `<div class="bandeau">${surpriseEnfants
+        ? "🧒 <b>Balade enfants</b> : le parcours (en orange) passe par des places de jeux, des animaux, des parcs, des glaciers… Les grands ronds 🎯 sont les étapes principales."
+        : "🏛️ <b>Balade découverte</b> : le parcours passe par des monuments, œuvres d'art et points de vue. Les grands ronds 🎯 sont les étapes principales."}<br>Au programme : ${contenuBalade}</div>` : "";
     zone.innerHTML = etapes().length
-      ? etapes().map(([nom, , , type, sym], i) => `<div class="etape ${vues.has(i) ? "vue" : ""}" onclick="allerA(${i})">
+      ? bandeau + etapes().map(([nom, , , type, sym, principale], i) => `<div class="etape ${vues.has(i) ? "vue" : ""} ${principale ? "principale" : ""}" onclick="allerA(${i})">
           <div class="num ${sym === "★" || vues.has(i) ? "" : "emoji"}">${vues.has(i) ? "✓" : sym}</div>
           <div><h3>${nom}</h3><p>${type}</p><div class="dist">à ${km(positionsSurprise[i])} du départ</div></div>
         </div>`).join("")
-      : "<p>Aucun lieu remarquable trouvé sur ce parcours. Essayez « 🔀 Autre balade » !</p>";
+      : (contenuBalade.startsWith("aucun")
+          ? "<p>⚠️ Le serveur des lieux n'a pas répondu. Réessayez « 🔀 Autre balade » dans un instant.</p>"
+          : "<p>Aucun lieu remarquable trouvé sur ce parcours. Essayez « 🔀 Autre balade » !</p>");
     return;
   }
   let cumul = 0, lignes = [];
@@ -575,6 +603,8 @@ document.getElementById("btnSuivi").onclick = () => {
 
 function majPosition(pos) {
   const moi = [pos.coords.latitude, pos.coords.longitude];
+  // Pas encore de départ : on prend la position actuelle comme départ
+  if (!depart) definirDepart("Ma position", moi[0], moi[1]);
   if (!pointMoi) {
     pointMoi = L.circleMarker(moi, { radius: 9, color: "#fff", weight: 3, fillColor: "#1e6fff", fillOpacity: 1 }).addTo(carte);
     carte.setView(moi, 16);
