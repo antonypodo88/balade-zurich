@@ -359,8 +359,9 @@ const REQUETES = {
   enfants: A => `nwr["leisure"~"^(playground|water_park|beach_resort|swimming_area)$"]${A};nwr["name"]["leisure"="park"]${A};`
     + `nwr["tourism"~"^(zoo|viewpoint|picnic_site)$"]${A};nwr["name"]["amenity"="ice_cream"]${A};nwr["natural"="beach"]${A};`,
 };
-const SERVEURS_OSM = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
-                      "https://overpass.kumi.systems/api/interpreter"];
+// overpass.osm.ch = serveur suisse, très rapide (Suisse uniquement) ; les autres en secours
+const SERVEURS_OSM = ["https://overpass.osm.ch/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+                      "https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
 
 async function chercherLieux(mode, centre, rayon) {
   const cle = "lieux2_" + mode + "_" + centre.map(x => x.toFixed(3)).join(",");
@@ -369,7 +370,7 @@ async function chercherLieux(mode, centre, rayon) {
 
   const A = `(around:${RAYON_RECHERCHE},${centre[0]},${centre[1]})`;
   const q = `[out:json][timeout:25];(${REQUETES[mode](A)});out center 700;`;
-  const data = await Promise.any(SERVEURS_OSM.map(s => fetchJson(s + "?data=" + encodeURIComponent(q), 25)))
+  const data = await Promise.any(SERVEURS_OSM.map(s => fetchJson(s + "?data=" + encodeURIComponent(q), 20)))
     .catch(() => { throw new Error("serveurs de lieux indisponibles"); });
   const vus = new Set(), lieux = [];
   for (const el of data.elements || []) {
@@ -396,7 +397,7 @@ async function afficherSortiesEnfants(numero) {
   const resume = document.getElementById("resume"), liste = document.getElementById("etapes");
   liste.innerHTML = "";
   if (!depart) { resume.textContent = "👉 Choisissez d'abord un point de départ : touchez « 📍 Ma position », « Wädenswil gare » ou tapez une adresse."; return; }
-  resume.textContent = dejaCherche("enfants") ? "Chargement…" : "Première recherche des sorties enfants (jusqu'à 25 s, ensuite ce sera instantané)…";
+  resume.textContent = dejaCherche("enfants") ? "Chargement…" : "Première recherche des sorties enfants (quelques secondes, ensuite ce sera instantané)…";
   try { sorties = await chercherLieux("enfants", [depart.lat, depart.lon], RAYON_RECHERCHE); }
   catch (e) { if (numero === choix) resume.textContent = "Recherche impossible pour le moment, réessayez dans un instant."; return; }
   if (numero !== choix) return;
@@ -450,35 +451,45 @@ async function tracerSurprise(numero) {
   liste.innerHTML = "";
   if (!depart) { resume.textContent = "👉 Choisissez d'abord un point de départ : touchez « 📍 Ma position », « Wädenswil gare » ou tapez une adresse."; return; }
   const mode = surpriseEnfants ? "enfants" : "visite";
-  resume.textContent = dejaCherche(mode) ? "Préparation de la balade…" : "Première recherche des lieux autour du départ (jusqu'à 25 s, ensuite ce sera instantané)…";
+  resume.textContent = dejaCherche(mode) ? "Préparation de la balade…" : "Première recherche des lieux autour du départ (quelques secondes, ensuite ce sera instantané)…";
   const d0 = [depart.lat, depart.lon];
-  const rayon = Math.round(surpriseKm * 1000 / 4);   // 2 km → 500 m, 3 km → 750 m, 5 km → 1250 m
+  // Distance idéale des étapes principales : une boucle de 3 km passe à ~800 m du départ
+  const cible = surpriseKm * 1000 / 4.3;
 
   let lieux = [];
-  try { lieux = await chercherLieux(mode, d0, rayon); } catch (e) { resume.textContent = "Lieux indisponibles, balade au hasard…"; }
-  if (numero !== choix) return;
-
-  // Coin peu fourni : on élargit la zone (la boucle sera un peu plus longue)
-  if (lieux.filter(l => l.d > rayon * 0.3).length < 4) {
-    try { lieux = await chercherLieux(mode, d0, Math.round(surpriseKm * 1000 / 2.6)); } catch (e) {}
-  }
+  try { lieux = await chercherLieux(mode, d0, Math.min(RAYON_RECHERCHE, cible * 1.5)); }
+  catch (e) { resume.textContent = "Lieux indisponibles, balade au hasard…"; }
   if (numero !== choix) return;
   const nbTrouves = lieux.length;
-  // 2 ou 3 « aimants » : des lieux intéressants dans des directions voisines
-  const candidats = lieux.filter(l => l.d > 150);
-  const cap = Math.random() * 360;
+
+  // 1re étape principale : un lieu intéressant à la bonne distance (on part donc toujours vers là où il y a des choses à voir)
+  let bande = lieux.filter(l => l.d > cible * 0.5 && l.d < cible * 1.5);
+  if (bande.length < 2) bande = lieux.filter(l => l.d > 200);
+  if (bande.filter(l => l.interet >= 2).length >= 3) bande = bande.filter(l => l.interet >= 2);   // on vise d'abord les lieux les plus sympas
   const aimants = [];
-  for (const decal of [-35, 35, 0].slice(0, surpriseKm >= 3 ? 3 : 2)) {
-    const visee = (cap + decal + 360) % 360;
-    const possibles = candidats.filter(l => !aimants.includes(l) && ecartCap(capVers(d0, [l.lat, l.lon]), visee) < 40);
-    if (possibles.length) aimants.push(auHasard(possibles));
+  let cap = Math.random() * 360;
+  if (bande.length) {
+    aimants.push(auHasard(bande));
+    cap = capVers(d0, [aimants[0].lat, aimants[0].lon]);
+    // 2e (et 3e) : à côté, en tournant d'un côté tiré au hasard, pour former une boucle
+    const sens = Math.random() < 0.5 ? 1 : -1;
+    for (const [min, max] of [[35, 110], [15, 60]].slice(0, surpriseKm >= 3 ? 2 : 1)) {
+      const dernier = aimants[aimants.length - 1];
+      const capDernier = capVers(d0, [dernier.lat, dernier.lon]);
+      const ok = s => bande.filter(l => !aimants.includes(l) && (() => {
+        const e = ((capVers(d0, [l.lat, l.lon]) - capDernier) * s + 720) % 360; return e >= min && e <= max; })());
+      const possibles = ok(sens).length ? ok(sens) : ok(-sens);
+      if (possibles.length) aimants.push(auHasard(possibles));
+    }
   }
-  if (aimants.length < 2) {
-    const cote = surpriseKm * 1000 / (3 * 1.3);
-    aimants.length = 0;
-    for (const c of [cap - 30, cap + 30]) { const p = deplacer(d0, cote, c); aimants.push({ lat: p[0], lon: p[1], vide: true }); }
+  if (aimants.length < 2) {   // pas assez de lieux : on complète par un point dans la même direction
+    const p = deplacer(d0, cible, cap + 50);
+    aimants.push({ lat: p[0], lon: p[1], vide: true });
+    if (aimants.length < 2) { const q = deplacer(d0, cible, cap - 50); aimants.unshift({ lat: q[0], lon: q[1], vide: true }); }
   }
-  aimants.sort((a, b) => ((capVers(d0, [a.lat, a.lon]) - cap + 540) % 360) - ((capVers(d0, [b.lat, b.lon]) - cap + 540) % 360));
+  // Ordre de visite : dans le sens du tour, pour une vraie boucle
+  const ref = capVers(d0, [aimants[0].lat, aimants[0].lon]) - 90;
+  aimants.sort((a, b) => ((capVers(d0, [a.lat, a.lon]) - ref + 720) % 360) - ((capVers(d0, [b.lat, b.lon]) - ref + 720) % 360));
   const pts = [d0, ...aimants.map(a => [a.lat, a.lon]), d0];
 
   let route;
