@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<link rel="apple-touch-icon" href="balade-zurich.png">
+<link rel="icon" href="balade-zurich.png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Balades Zurich">
+<title>Balades Zurich & lac</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  body { font-family: system-ui; background: #eef3f8; color: #1d2733; margin: 0; }
+  header { background: #0f4c81; color: #fff; padding: 14px 16px 12px; }
+  header h1 { margin: 0 0 10px; font-size: 1.3em; }
+  .choix { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .choix button { flex: 0 0 auto; background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.35);
+                  border-radius: 20px; padding: 8px 14px; font-size: 0.95em; }
+  .choix button small { opacity: .8; }
+  .choix button.actif { background: #fff; color: #0f4c81; font-weight: 700; }
+  .depart { margin-top: 12px; background: rgba(0,0,0,.18); border-radius: 12px; padding: 10px; }
+  .depart .titre { font-size: 0.85em; opacity: .9; margin-bottom: 6px; }
+  .depart input[type=text] { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: none; font-size: 1em; }
+  #suggestions div { background: #fff; color: #1d2733; padding: 9px 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 0.95em; }
+  .raccourcis { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .raccourcis button, #options button { background: rgba(255,255,255,.15); color: #fff; border: 1px solid rgba(255,255,255,.35);
+                       border-radius: 16px; padding: 6px 12px; font-size: 0.9em; }
+  #options button.actif { background: #ffd400; color: #1d2733; border-color: #ffd400; font-weight: 700; }
+  #options { display: none; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .depart label { display: block; margin-top: 8px; font-size: 0.9em; }
+  #departInfo { margin-top: 6px; font-size: 0.9em; font-weight: 600; }
+  .resume { font-size: 0.95em; margin-top: 10px; opacity: 0.95; }
+  #carte { height: 50vh; }
+  .suivi { padding: 12px 16px; background: #fff; border-bottom: 1px solid #d6e0ea; display: flex; flex-wrap: wrap; gap: 8px; }
+  .suivi button { flex: 1; background: #0f4c81; color: #fff; border: none; border-radius: 12px; padding: 12px; font-size: 1em; }
+  .suivi button.actif { background: #2e7d32; }
+  .suivi button.secondaire { flex: 0 0 auto; background: #d6e0ea; color: #1d2733; }
+  #prochaine { flex-basis: 100%; font-size: 1.05em; }
+  .etapes { padding: 8px 16px 30px; }
+  .etape { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid #d6e0ea; cursor: pointer; }
+  .num { flex: 0 0 34px; height: 34px; border-radius: 50%; background: #0f4c81; color: #fff;
+         display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .num.emoji { background: #fff; border: 1px solid #d6e0ea; font-size: 18px; }
+  .etape.vue .num { background: #2e7d32; }
+  .etape.depart-ligne .num { background: #1e6fff; }
+  .etape.choisi { background: #fff7cc; }
+  .etape h3 { margin: 0 0 4px; font-size: 1.05em; }
+  .etape p { margin: 0; font-size: 0.9em; color: #4b5a6a; }
+  .etape .dist { font-size: 0.8em; color: #0f4c81; margin-top: 4px; font-weight: 600; }
+  .marqueur { background: #0f4c81; color: #fff; border: 2px solid #fff; border-radius: 50%; width: 28px; height: 28px;
+              display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+              box-shadow: 0 2px 5px rgba(0,0,0,.35); }
+  .marqueur.vue { background: #2e7d32; }
+  .marqueur.depart { background: #1e6fff; }
+  .marqueur.etoile { background: #ffd400; color: #1d2733; }
+  .marqueur.emoji { background: #fff; font-size: 16px; }
+  .credits { font-size: 0.75em; color: #6b7a89; padding: 0 16px 20px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Balades Zurich & lac</h1>
+  <div class="choix" id="choix"></div>
+
+  <div class="depart">
+    <div class="titre">Point de départ</div>
+    <input type="text" id="recherche" placeholder="🔍 Rechercher une adresse ou un lieu…" autocomplete="off">
+    <div id="suggestions"></div>
+    <div class="raccourcis">
+      <button onclick="departPosition()">📍 Ma position</button>
+      <button onclick="definirDepart('Wädenswil, gare', 47.2294, 8.6716)">Wädenswil gare</button>
+      <button onclick="definirDepart('Zürich HB', 47.3779, 8.5403)">Zürich HB</button>
+      <button onclick="definirDepart('Rapperswil, gare', 47.2256, 8.8166)">Rapperswil gare</button>
+    </div>
+    <label><input type="checkbox" id="boucle"> Revenir au point de départ</label>
+    <div id="departInfo"></div>
+  </div>
+
+  <div id="options">
+    <button data-km="2" onclick="choisirKm(2)">2 km</button>
+    <button data-km="3" onclick="choisirKm(3)">3 km</button>
+    <button data-km="5" onclick="choisirKm(5)">5 km</button>
+    <button id="btnEnfants" onclick="basculerEnfants()">🧒 Version enfants</button>
+    <button onclick="afficherBalade()">🔀 Autre balade</button>
+  </div>
+
+  <div class="resume" id="resume">Calcul du parcours…</div>
+</header>
+
+<div id="carte"></div>
+
+<div class="suivi">
+  <button id="btnSuivi">📍 Suivre ma position</button>
+  <button id="btnReset" class="secondaire">↺ Recommencer</button>
+  <div id="prochaine"></div>
+</div>
+
+<div class="etapes" id="etapes"></div>
+<div class="credits">Carte © swisstopo · Adresses : geo.admin.ch · Lieux et itinéraires © contributeurs OpenStreetMap (Overpass, FOSSGIS) · Coordonnées des balades classiques approximatives</div>
+
+<script>
+// ===== BALADES : pour chaque étape [nom, latitude, longitude, description] =====
+const BALADES = [
+  { nom: "🎲 Balade surprise", surprise: true, etapes: [] },
+  { nom: "🛝 Sorties enfants", enfants: true, etapes: [] },
+  { nom: "Vieille ville de Zurich", etapes: [
+    ["Zürich HB", 47.3779, 8.5403, "La gare centrale (1871), l'une des plus fréquentées d'Europe."],
+    ["Bahnhofstrasse", 47.3740, 8.5390, "La célèbre rue commerçante qui relie la gare au lac."],
+    ["Lindenhof", 47.3729, 8.5409, "Colline ombragée, ancien fort romain : superbe vue sur la Limmat et la vieille ville."],
+    ["Église St. Peter", 47.3710, 8.5406, "Son cadran d'horloge de 8,7 m est le plus grand d'Europe."],
+    ["Fraumünster", 47.3698, 8.5414, "Église célèbre pour ses vitraux de Marc Chagall."],
+    ["Grossmünster", 47.3701, 8.5441, "L'emblème de Zurich aux deux tours, berceau de la Réforme de Zwingli."],
+    ["Niederdorf", 47.3727, 8.5440, "Ruelles piétonnes de la vieille ville, cafés et petites boutiques."],
+    ["Bellevue & Opéra", 47.3651, 8.5467, "Place animée au bord du lac, face à l'Opernhaus."],
+    ["Bürkliplatz", 47.3666, 8.5409, "Départ des bateaux du lac ; marché aux puces le samedi en été."],
+  ]},
+  { nom: "Bord du lac & Zürichhorn", etapes: [
+    ["Bürkliplatz", 47.3666, 8.5409, "Départ des bateaux, vue sur le lac."],
+    ["Quaibrücke", 47.3669, 8.5433, "Le pont d'où l'on voit les Alpes par beau temps."],
+    ["Utoquai", 47.3620, 8.5480, "Promenade au bord de l'eau et bains historiques."],
+    ["Pavillon Le Corbusier", 47.3556, 8.5515, "Dernière œuvre de Le Corbusier (1967), en acier et verre coloré."],
+    ["Chinagarten", 47.3548, 8.5527, "Jardin chinois offert par Kunming, ville jumelée avec Zurich."],
+    ["Parc du Zürichhorn", 47.3535, 8.5510, "Grandes pelouses au bord de l'eau et la sculpture « Heureka » de Tinguely."],
+  ]},
+  { nom: "Rapperswil, ville des roses", etapes: [
+    ["Gare de Rapperswil", 47.2256, 8.8166, "Départ au bord du lac."],
+    ["Hauptplatz", 47.2270, 8.8170, "La place principale de la vieille ville."],
+    ["Château de Rapperswil", 47.2275, 8.8155, "Château du XIIIᵉ siècle qui domine la ville et le lac."],
+    ["Parc aux daims (Hirschpark)", 47.2283, 8.8135, "Sur la colline du Lindenhof : des daims à voir, les enfants adorent."],
+    ["Seequai", 47.2255, 8.8140, "Promenade au bord du lac."],
+    ["Pont de bois (Holzbrücke)", 47.2220, 8.8225, "Passerelle en bois de 841 m au-dessus du lac, sur l'ancien chemin des pèlerins."],
+  ]},
+];
+// ================================================================================
+
+const RAYON_VISITE = 40;        // mètres : étape cochée quand on passe à moins de 40 m
+const VITESSE = 4.5;            // km/h
+const PROCHE_PARCOURS = 70;     // mètres : un lieu compte s'il est à moins de 70 m du tracé
+const RAYON_RECHERCHE = 2000;   // mètres : zone de recherche des lieux autour du départ
+const P = "zh_";                // préfixe des données gardées sur le téléphone (distinct de l'appli Bordeaux)
+
+const km = m => m < 1000 ? Math.round(m) + " m" : (m / 1000).toFixed(1).replace(".", ",") + " km";
+const duree = m => { const min = Math.round(m / 1000 / VITESSE * 60); return min < 60 ? min + " min" : Math.floor(min / 60) + " h " + String(min % 60).padStart(2, "0"); };
+
+function distance(a, b) {
+  const R = 6371000, rad = x => x * Math.PI / 180;
+  const dLat = rad(b[0] - a[0]), dLon = rad(b[1] - a[1]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0])) * Math.cos(rad(b[0])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function deplacer(p, metres, cap) {
+  const c = cap * Math.PI / 180;
+  return [p[0] + metres * Math.cos(c) / 111320, p[1] + metres * Math.sin(c) / (111320 * Math.cos(p[0] * Math.PI / 180))];
+}
+
+// ===================== ÉTAT (gardé uniquement sur le téléphone) =====================
+const lire = (cle, defaut) => { try { return JSON.parse(localStorage.getItem(P + cle)) ?? defaut; } catch (e) { return defaut; } };
+const ecrire = (cle, val) => { try { localStorage.setItem(P + cle, JSON.stringify(val)); } catch (e) {} };
+
+let choix = lire("choix", 0);
+if (choix >= BALADES.length) choix = 0;
+let depart = lire("depart", null);
+let boucle = lire("boucle", false);
+let surpriseKm = lire("km", 3);
+let surpriseEnfants = lire("enfants", false);
+document.getElementById("boucle").checked = boucle;
+
+let avecDepart = false, vues = new Set(), ordre = [], distancesEtapes = [], positionsSurprise = [], marqueurs = {}, sorties = [];
+const balade = () => BALADES[choix];
+const etapes = () => balade().etapes;
+const speciale = () => balade().surprise || balade().enfants;
+
+function calculerOrdre() {
+  const n = etapes().length;
+  if (!depart || speciale()) return [...Array(n).keys()];
+  let plusProche = 0, dMin = Infinity;
+  etapes().forEach((e, i) => { const d = distance([depart.lat, depart.lon], [e[1], e[2]]); if (d < dMin) { dMin = d; plusProche = i; } });
+  return [...Array(n).keys()].map(k => (plusProche + k) % n);
+}
+
+// ===================== CARTE (swisstopo) =====================
+const carte = L.map("carte").setView([47.27, 8.65], 11);
+L.tileLayer("https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg",
+  { maxZoom: 19, maxNativeZoom: 18, attribution: "© swisstopo" }).addTo(carte);
+const calqueParcours = L.layerGroup().addTo(carte);
+const calqueEtapes = L.layerGroup().addTo(carte);
+
+const icone = (texte, classe) => L.divIcon({ className: "", iconSize: [28, 28], iconAnchor: [14, 14],
+  html: `<div class="marqueur ${classe}">${texte}</div>` });
+
+// ===================== CHOIX DE LA BALADE =====================
+function afficherChoix() {
+  document.getElementById("choix").innerHTML = BALADES.map((b, i) => {
+    let loin = "";
+    if (depart && b.etapes.length && !b.surprise && !b.enfants) {
+      const d = Math.min(...b.etapes.map(e => distance([depart.lat, depart.lon], [e[1], e[2]])));
+      loin = ` <small>· à ${km(d * 1.3)}</small>`;
+    }
+    return `<button class="${i === choix ? "actif" : ""}" onclick="choisir(${i})">${b.nom}${loin}</button>`;
+  }).join("");
+  document.getElementById("options").style.display = balade().surprise ? "flex" : "none";
+  document.querySelectorAll("#options button[data-km]").forEach(b =>
+    b.classList.toggle("actif", Number(b.dataset.km) === surpriseKm));
+  document.getElementById("btnEnfants").classList.toggle("actif", surpriseEnfants);
+}
+
+function choisir(i) { choix = i; ecrire("choix", i); afficherBalade(); }
+function choisirKm(k) { surpriseKm = k; ecrire("km", k); afficherBalade(); }
+function basculerEnfants() { surpriseEnfants = !surpriseEnfants; ecrire("enfants", surpriseEnfants); afficherBalade(); }
+
+// ===================== POINT DE DÉPART =====================
+function definirDepart(nom, lat, lon) {
+  depart = nom ? { nom, lat, lon } : null;
+  ecrire("depart", depart);
+  document.getElementById("recherche").value = "";
+  document.getElementById("suggestions").innerHTML = "";
+  afficherBalade();
+}
+
+function departPosition() {
+  if (!navigator.geolocation) { alert("La localisation n'est pas disponible sur cet appareil."); return; }
+  document.getElementById("departInfo").textContent = "Recherche de votre position…";
+  navigator.geolocation.getCurrentPosition(
+    p => definirDepart("Ma position", p.coords.latitude, p.coords.longitude),
+    err => { document.getElementById("departInfo").textContent = "Position introuvable : " + err.message; },
+    { enableHighAccuracy: true, timeout: 15000 });
+}
+
+document.getElementById("boucle").onchange = e => { boucle = e.target.checked; ecrire("boucle", boucle); afficherBalade(); };
+
+// Recherche d'adresse suisse (geo.admin.ch)
+let attente = null, resultats = [];
+document.getElementById("recherche").oninput = e => {
+  clearTimeout(attente);
+  const q = e.target.value.trim();
+  if (q.length < 3) { document.getElementById("suggestions").innerHTML = ""; return; }
+  attente = setTimeout(() => chercherAdresse(q), 350);
+};
+
+async function chercherAdresse(q) {
+  const zone = document.getElementById("suggestions");
+  try {
+    const url = "https://api3.geo.admin.ch/rest/services/api/SearchServer?type=locations&sr=4326&limit=6&searchText=" + encodeURIComponent(q);
+    const data = await fetchJson(url, 10);
+    resultats = (data.results || []).map(r => ({ nom: r.attrs.label.replace(/<[^>]+>/g, "").trim(), lat: r.attrs.lat, lon: r.attrs.lon }));
+    zone.innerHTML = resultats.length
+      ? resultats.map((r, i) => `<div onclick="choisirAdresse(${i})">${r.nom}</div>`).join("")
+      : "<div>Aucun résultat</div>";
+  } catch (err) {
+    zone.innerHTML = "<div>Recherche indisponible : " + err.message + "</div>";
+  }
+}
+function choisirAdresse(i) { definirDepart(resultats[i].nom, resultats[i].lat, resultats[i].lon); }
+
+// ===================== OUTILS RÉSEAU =====================
+async function fetchJson(url, secondes) {
+  const stop = new AbortController();
+  const minuteur = setTimeout(() => stop.abort(), secondes * 1000);
+  try {
+    const rep = await fetch(url, { signal: stop.signal });
+    if (!rep.ok) throw new Error("erreur " + rep.status);
+    return await rep.json();
+  } finally { clearTimeout(minuteur); }
+}
+
+async function itineraire(pts) {
+  const url = "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
+            + pts.map(p => p[1] + "," + p[0]).join(";") + "?overview=full&geometries=geojson";
+  const data = await fetchJson(url, 20);
+  if (!data.routes?.length) throw new Error("pas d'itinéraire");
+  return data.routes[0];
+}
+
+// ===================== AFFICHAGE =====================
+function afficherBalade() {
+  afficherChoix();
+  calqueEtapes.clearLayers();
+  calqueParcours.clearLayers();
+  marqueurs = {};
+  document.getElementById("prochaine").textContent = "";
+  document.getElementById("departInfo").textContent = depart ? "Départ : " + depart.nom : "Départ : 1ʳᵉ étape de la balade";
+  if (depart) L.marker([depart.lat, depart.lon], { icon: icone("D", "depart") }).bindPopup("Départ").addTo(calqueEtapes);
+
+  if (balade().surprise) { balade().etapes = []; tracerSurprise(choix); return; }
+  if (balade().enfants) { balade().etapes = []; afficherSortiesEnfants(choix); return; }
+
+  vues = new Set(lire("vues_" + choix, []));
+  ordre = calculerOrdre();
+  ordre.forEach((idx, pos) => {
+    const [nom, lat, lon, desc] = etapes()[idx];
+    marqueurs[idx] = L.marker([lat, lon], { icon: icone(pos + 1, vues.has(idx) ? "vue" : "") })
+      .bindPopup(`<b>${pos + 1}. ${nom}</b><br>${desc}`).addTo(calqueEtapes);
+  });
+  const points = ordre.map(i => [etapes()[i][1], etapes()[i][2]]);
+  if (depart && distance([depart.lat, depart.lon], points[0]) < 8000) points.unshift([depart.lat, depart.lon]);
+  carte.fitBounds(points, { padding: [30, 30] });
+  document.getElementById("resume").textContent = "Calcul du parcours…";
+  tracerParcours(choix);
+}
+
+// ===================== BALADES CLASSIQUES =====================
+async function tracerParcours(numero) {
+  const pts = ordre.map(i => [etapes()[i][1], etapes()[i][2]]);
+  // Départ trop loin (ex. Wädenswil → vieille ville de Zurich) : on commence directement à la 1ʳᵉ étape
+  avecDepart = !!depart && distance([depart.lat, depart.lon], pts[0]) < 8000;
+  if (avecDepart) pts.unshift([depart.lat, depart.lon]);
+  if (avecDepart && boucle) pts.push([depart.lat, depart.lon]);
+  try {
+    const route = await itineraire(pts);
+    if (numero !== choix) return;
+    L.geoJSON(route.geometry, { style: { color: "#0f4c81", weight: 5, opacity: 0.75 } }).addTo(calqueParcours);
+    distancesEtapes = route.legs.map(l => l.distance);
+    document.getElementById("resume").textContent =
+      `${ordre.length} étapes · ${km(route.distance)} à pied · environ ${duree(route.distance)} de marche`
+      + (depart && !avecDepart ? " · (départ trop loin : prenez le train ou le bateau jusqu'à la 1ʳᵉ étape)" : "");
+  } catch (e) {
+    if (numero !== choix) return;
+    L.polyline(pts, { color: "#0f4c81", weight: 4, dashArray: "6 8" }).addTo(calqueParcours);
+    distancesEtapes = pts.slice(1).map((p, i) => distance(pts[i], p) * 1.3);
+    const total = distancesEtapes.reduce((a, b) => a + b, 0);
+    document.getElementById("resume").textContent =
+      `${ordre.length} étapes · environ ${km(total)} · ${duree(total)} de marche (estimation)`;
+  }
+  afficherListe();
+}
+
+// ===================== LIEUX (OpenStreetMap) =====================
+// [clé OSM, valeur, libellé, intérêt, symbole, nom obligatoire ?]
+const TYPES = {
+  visite: [
+    ["tourism", "museum", "Musée", 3, "★", true], ["tourism", "viewpoint", "Point de vue", 3, "★", false],
+    ["tourism", "attraction", "Curiosité", 3, "★", true], ["historic", null, "Patrimoine", 3, "★", true],
+    ["tourism", "artwork", "Œuvre d'art", 2, "★", true], ["amenity", "fountain", "Fontaine", 2, "★", true],
+    ["leisure", "park", "Parc", 2, "★", true], ["leisure", "garden", "Jardin", 2, "★", true],
+    ["amenity", "place_of_worship", "Lieu de culte", 1, "★", true],
+  ],
+  enfants: [
+    ["leisure", "playground", "Place de jeux", 3, "🛝", false], ["tourism", "zoo", "Animaux", 3, "🦙", false],
+    ["leisure", "water_park", "Parc aquatique", 3, "💦", false], ["leisure", "park", "Parc", 2, "🌳", true],
+    ["leisure", "beach_resort", "Plage / Strandbad", 2, "🏖️", false], ["leisure", "swimming_area", "Baignade", 2, "🏖️", false],
+    ["natural", "beach", "Plage", 2, "🏖️", false], ["amenity", "ice_cream", "Glacier", 1, "🍦", true],
+    ["tourism", "picnic_site", "Pique-nique", 1, "🧺", false], ["tourism", "viewpoint", "Point de vue", 1, "👀", false],
+  ],
+};
+const REQUETES = {
+  visite: A => `nwr["name"]["tourism"~"^(museum|attraction|artwork)$"]${A};nwr["tourism"="viewpoint"]${A};`
+    + `nwr["name"]["historic"~"^(monument|memorial|castle|manor|city_gate|ruins|archaeological_site|building|church|tower|fort)$"]${A};`
+    + `nwr["name"]["amenity"~"^(fountain|place_of_worship)$"]${A};nwr["name"]["leisure"~"^(park|garden)$"]${A};`,
+  enfants: A => `nwr["leisure"~"^(playground|water_park|beach_resort|swimming_area)$"]${A};nwr["name"]["leisure"="park"]${A};`
+    + `nwr["tourism"~"^(zoo|viewpoint|picnic_site)$"]${A};nwr["name"]["amenity"="ice_cream"]${A};nwr["natural"="beach"]${A};`,
+};
+const SERVEURS_OSM = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+                      "https://overpass.kumi.systems/api/interpreter"];
+
+async function chercherLieux(mode, centre, rayon) {
+  const cle = "lieux_" + mode + "_" + centre.map(x => x.toFixed(3)).join(",");
+  const garde = lire(cle, null);
+  if (garde && Date.now() - garde.date < 30 * 86400000) return filtrer(garde.lieux, centre, rayon);
+
+  const A = `(around:${RAYON_RECHERCHE},${centre[0]},${centre[1]})`;
+  const q = `[out:json][timeout:15];(${REQUETES[mode](A)});out center 700;`;
+  const data = await Promise.any(SERVEURS_OSM.map(s => fetchJson(s + "?data=" + encodeURIComponent(q), 12)))
+    .catch(() => { throw new Error("serveurs de lieux indisponibles"); });
+  const vus = new Set(), lieux = [];
+  for (const el of data.elements || []) {
+    const lat = el.lat ?? el.center?.lat, lon = el.lon ?? el.center?.lon, tags = el.tags || {};
+    if (lat == null || ["private", "no"].includes(tags.access)) continue;
+    const t = TYPES[mode].find(([k, v]) => tags[k] && (!v || tags[k] === v));
+    if (!t || (t[5] && !tags.name)) continue;
+    const nom = tags.name || t[2];
+    const id = tags.name ? nom : nom + lat.toFixed(4) + lon.toFixed(4);
+    if (vus.has(id)) continue;
+    vus.add(id);
+    lieux.push({ nom, lat: +lat.toFixed(5), lon: +lon.toFixed(5), type: t[2], interet: t[3], sym: t[4] });
+  }
+  ecrire(cle, { date: Date.now(), lieux });
+  return filtrer(lieux, centre, rayon);
+}
+const filtrer = (lieux, centre, rayon) =>
+  lieux.map(l => ({ ...l, d: distance(centre, [l.lat, l.lon]) })).filter(l => l.d <= rayon);
+const dejaCherche = mode => depart && lire("lieux_" + mode + "_" + depart.lat.toFixed(3) + "," + depart.lon.toFixed(3), null);
+
+// ===================== SORTIES ENFANTS =====================
+async function afficherSortiesEnfants(numero) {
+  const resume = document.getElementById("resume"), liste = document.getElementById("etapes");
+  liste.innerHTML = "";
+  if (!depart) { resume.textContent = "Choisissez d'abord un point de départ (adresse, ma position…)."; return; }
+  resume.textContent = dejaCherche("enfants") ? "Chargement…" : "Première recherche des sorties enfants (jusqu'à 15 s, ensuite ce sera instantané)…";
+  try { sorties = await chercherLieux("enfants", [depart.lat, depart.lon], RAYON_RECHERCHE); }
+  catch (e) { if (numero === choix) resume.textContent = "Recherche impossible pour le moment, réessayez dans un instant."; return; }
+  if (numero !== choix) return;
+  sorties.sort((a, b) => a.d - b.d);
+  sorties = sorties.slice(0, 40);
+  sorties.forEach((s, i) => {
+    marqueurs[i] = L.marker([s.lat, s.lon], { icon: icone(s.sym, "emoji") })
+      .bindPopup(`<b>${s.nom}</b><br>${s.type} · ≈ ${km(s.d * 1.3)}`).on("click", () => allerVers(i)).addTo(calqueEtapes);
+  });
+  const pts = [[depart.lat, depart.lon], ...sorties.map(s => [s.lat, s.lon])];
+  carte.fitBounds(pts, { padding: [30, 30] });
+  resume.textContent = `${sorties.length} sorties enfants autour du départ · touchez-en une pour voir le chemin`;
+  liste.innerHTML = sorties.length ? sorties.map((s, i) => `<div class="etape" id="sortie${i}" onclick="allerVers(${i})">
+      <div class="num emoji">${s.sym}</div>
+      <div><h3>${s.nom}</h3><p>${s.type}</p><div class="dist">≈ ${km(s.d * 1.3)} · ${duree(s.d * 1.3)} à pied</div></div>
+    </div>`).join("") : "<p>Rien trouvé autour de ce départ.</p>";
+}
+
+async function allerVers(i) {
+  const s = sorties[i];
+  document.querySelectorAll(".etape.choisi").forEach(e => e.classList.remove("choisi"));
+  document.getElementById("sortie" + i)?.classList.add("choisi");
+  calqueParcours.clearLayers();
+  const resume = document.getElementById("resume");
+  resume.textContent = "Calcul du chemin vers " + s.nom + "…";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  try {
+    const route = await itineraire([[depart.lat, depart.lon], [s.lat, s.lon]]);
+    L.geoJSON(route.geometry, { style: { color: "#0f4c81", weight: 5, opacity: 0.75 } }).addTo(calqueParcours);
+    carte.fitBounds(route.geometry.coordinates.map(c => [c[1], c[0]]), { padding: [40, 40] });
+    resume.textContent = `${s.sym} ${s.nom} : ${km(route.distance)} à pied · environ ${duree(route.distance)} (aller)`;
+  } catch (e) {
+    L.polyline([[depart.lat, depart.lon], [s.lat, s.lon]], { color: "#0f4c81", weight: 4, dashArray: "6 8" }).addTo(calqueParcours);
+    resume.textContent = `${s.sym} ${s.nom} : environ ${km(s.d * 1.3)} (estimation)`;
+  }
+  marqueurs[i]?.openPopup();
+}
+
+// ===================== BALADE SURPRISE =====================
+const capVers = (a, b) => (Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]) * 180 / Math.PI + 360) % 360;
+const ecartCap = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+const auHasard = liste => {
+  const total = liste.reduce((s, l) => s + l.interet, 0);
+  let r = Math.random() * total;
+  for (const l of liste) { r -= l.interet; if (r <= 0) return l; }
+  return liste[liste.length - 1];
+};
+
+async function tracerSurprise(numero) {
+  const resume = document.getElementById("resume"), liste = document.getElementById("etapes");
+  liste.innerHTML = "";
+  if (!depart) { resume.textContent = "Choisissez d'abord un point de départ (adresse, ma position…)."; return; }
+  const mode = surpriseEnfants ? "enfants" : "visite";
+  resume.textContent = dejaCherche(mode) ? "Préparation de la balade…" : "Première recherche des lieux autour du départ (jusqu'à 15 s, ensuite ce sera instantané)…";
+  const d0 = [depart.lat, depart.lon];
+  const rayon = Math.round(surpriseKm * 1000 / 4);   // 2 km → 500 m, 3 km → 750 m, 5 km → 1250 m
+
+  let lieux = [];
+  try { lieux = await chercherLieux(mode, d0, rayon); } catch (e) { resume.textContent = "Lieux indisponibles, balade au hasard…"; }
+  if (numero !== choix) return;
+
+  // 2 ou 3 « aimants » : des lieux intéressants dans des directions voisines
+  const candidats = lieux.filter(l => l.d > rayon * 0.3);
+  const cap = Math.random() * 360;
+  const aimants = [];
+  for (const decal of [-35, 35, 0].slice(0, surpriseKm >= 3 ? 3 : 2)) {
+    const visee = (cap + decal + 360) % 360;
+    const possibles = candidats.filter(l => !aimants.includes(l) && ecartCap(capVers(d0, [l.lat, l.lon]), visee) < 40);
+    if (possibles.length) aimants.push(auHasard(possibles));
+  }
+  if (aimants.length < 2) {
+    const cote = surpriseKm * 1000 / (3 * 1.3);
+    aimants.length = 0;
+    for (const c of [cap - 30, cap + 30]) { const p = deplacer(d0, cote, c); aimants.push({ lat: p[0], lon: p[1], vide: true }); }
+  }
+  aimants.sort((a, b) => ((capVers(d0, [a.lat, a.lon]) - cap + 540) % 360) - ((capVers(d0, [b.lat, b.lon]) - cap + 540) % 360));
+  const pts = [d0, ...aimants.map(a => [a.lat, a.lon]), d0];
+
+  let route;
+  try { route = await itineraire(pts); } catch (e) { resume.textContent = "Itinéraire impossible : " + e.message; return; }
+  if (numero !== choix) return;
+  L.geoJSON(route.geometry, { style: { color: "#0f4c81", weight: 5, opacity: 0.75 } }).addTo(calqueParcours);
+  carte.fitBounds(route.geometry.coordinates.map(c => [c[1], c[0]]), { padding: [30, 30] });
+
+  // Tous les lieux à moins de 70 m du tracé, dans l'ordre du parcours
+  const trace = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  const cumul = [0];
+  for (let i = 1; i < trace.length; i++) cumul.push(cumul[i - 1] + distance(trace[i - 1], trace[i]));
+  const trouves = [];
+  for (const l of lieux) {
+    let best = Infinity, iBest = 0;
+    for (let i = 0; i < trace.length; i++) { const d = distance([l.lat, l.lon], trace[i]); if (d < best) { best = d; iBest = i; } }
+    if (best <= PROCHE_PARCOURS || aimants.includes(l)) trouves.push({ ...l, pos: cumul[iBest] });
+  }
+  trouves.sort((a, b) => a.pos - b.pos);
+  const choisis = trouves.slice(0, 25);
+
+  balade().etapes = choisis.map(t => [t.nom, t.lat, t.lon, t.type, t.sym]);
+  positionsSurprise = choisis.map(t => t.pos);
+  ordre = choisis.map((t, i) => i);
+  vues = new Set();
+  ecrire("vues_" + choix, []);
+
+  choisis.forEach((t, i) => {
+    marqueurs[i] = L.marker([t.lat, t.lon], { icon: icone(t.sym, t.sym === "★" ? "etoile" : "emoji") })
+      .bindPopup(`<b>${t.nom}</b><br>${t.type}`).addTo(calqueEtapes);
+  });
+  resume.textContent = `Boucle de ${km(route.distance)} · environ ${duree(route.distance)} · ${choisis.length} lieux à découvrir`;
+  afficherListe();
+}
+
+// ===================== LISTE DES ÉTAPES =====================
+function afficherListe() {
+  const decal = avecDepart ? 1 : 0;
+  const zone = document.getElementById("etapes");
+  if (balade().surprise) {
+    zone.innerHTML = etapes().length
+      ? etapes().map(([nom, , , type, sym], i) => `<div class="etape ${vues.has(i) ? "vue" : ""}" onclick="allerA(${i})">
+          <div class="num ${sym === "★" || vues.has(i) ? "" : "emoji"}">${vues.has(i) ? "✓" : sym}</div>
+          <div><h3>${nom}</h3><p>${type}</p><div class="dist">à ${km(positionsSurprise[i])} du départ</div></div>
+        </div>`).join("")
+      : "<p>Aucun lieu remarquable trouvé sur ce parcours. Essayez « 🔀 Autre balade » !</p>";
+    return;
+  }
+  let cumul = 0, lignes = [];
+  if (avecDepart) lignes.push(`<div class="etape depart-ligne"><div class="num">D</div><div><h3>Départ : ${depart.nom}</h3></div></div>`);
+  ordre.forEach((idx, pos) => {
+    const [nom, , , desc] = etapes()[idx];
+    const troncon = pos === 0 && !avecDepart ? 0 : (distancesEtapes[pos - 1 + decal] || 0);
+    cumul += troncon;
+    const info = troncon === 0 ? "Départ" : `+ ${km(troncon)} · total ${km(cumul)}`;
+    lignes.push(`<div class="etape ${vues.has(idx) ? "vue" : ""}" onclick="allerA(${idx})">
+      <div class="num">${vues.has(idx) ? "✓" : pos + 1}</div>
+      <div><h3>${nom}</h3><p>${desc}</p><div class="dist">${info}</div></div>
+    </div>`);
+  });
+  if (avecDepart && boucle) {
+    const retour = distancesEtapes[ordre.length] || 0;
+    cumul += retour;
+    lignes.push(`<div class="etape depart-ligne"><div class="num">D</div><div><h3>Retour au départ</h3>
+      <div class="dist">+ ${km(retour)} · total ${km(cumul)}</div></div></div>`);
+  }
+  zone.innerHTML = lignes.join("");
+}
+
+function allerA(idx) {
+  carte.setView([etapes()[idx][1], etapes()[idx][2]], 17);
+  marqueurs[idx]?.openPopup();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function marquerVue(idx) {
+  vues.add(idx);
+  ecrire("vues_" + choix, [...vues]);
+  marqueurs[idx]?.setIcon(icone(balade().surprise ? "✓" : ordre.indexOf(idx) + 1, "vue"));
+  afficherListe();
+}
+
+document.getElementById("btnReset").onclick = () => {
+  if (!confirm("Remettre à zéro les étapes de cette balade ?")) return;
+  ecrire("vues_" + choix, []);
+  vues = new Set();
+  afficherBalade();
+};
+
+// ===================== SUIVI GPS =====================
+let suiviId = null, pointMoi = null;
+
+document.getElementById("btnSuivi").onclick = () => {
+  const btn = document.getElementById("btnSuivi");
+  if (suiviId !== null) {
+    navigator.geolocation.clearWatch(suiviId);
+    suiviId = null;
+    btn.classList.remove("actif");
+    btn.textContent = "📍 Suivre ma position";
+    return;
+  }
+  if (!navigator.geolocation) { alert("La localisation n'est pas disponible sur cet appareil."); return; }
+  btn.classList.add("actif");
+  btn.textContent = "⏹ Arrêter le suivi";
+  suiviId = navigator.geolocation.watchPosition(majPosition,
+    err => { document.getElementById("prochaine").textContent = "Localisation impossible : " + err.message; },
+    { enableHighAccuracy: true, maximumAge: 5000 });
+};
+
+function majPosition(pos) {
+  const moi = [pos.coords.latitude, pos.coords.longitude];
+  if (!pointMoi) {
+    pointMoi = L.circleMarker(moi, { radius: 9, color: "#fff", weight: 3, fillColor: "#1e6fff", fillOpacity: 1 }).addTo(carte);
+    carte.setView(moi, 16);
+  } else {
+    pointMoi.setLatLng(moi);
+  }
+  if (balade().enfants) return;
+  ordre.forEach(idx => { const e = etapes()[idx]; if (!vues.has(idx) && distance(moi, [e[1], e[2]]) < RAYON_VISITE) marquerVue(idx); });
+
+  const idx = ordre.find(i => !vues.has(i));
+  const zone = document.getElementById("prochaine");
+  if (idx === undefined) { zone.innerHTML = etapes().length ? "🎉 Balade terminée, bravo !" : ""; return; }
+  const e = etapes()[idx];
+  const d = distance(moi, [e[1], e[2]]);
+  zone.innerHTML = `Prochaine étape : <b>${e[0]}</b><br>à ${km(d)} à vol d'oiseau (≈ ${duree(d * 1.3)})`;
+}
+
+afficherBalade();
+</script>
+</body>
+</html>
